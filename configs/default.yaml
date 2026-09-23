@@ -1,0 +1,50 @@
+seed: 42
+device: cuda
+
+bclip:
+  repo: external/B-CLIP
+  checkpoint: /path/to/bclip_checkpoint.pth
+  model_name: CLIP_VITB16_OPENAI
+  context_length: 77
+  global_pool: ""   # keep patch tokens for β-CLIP conditioned pooling
+  attn_fn: softmax
+  attn_fn_alpha: 1.0
+  text_conditioning_mode: attn_pooling_mlp
+  use_text_conditioned_cls: false
+
+prompt:
+  object_tokens: 1
+  action_tokens: 2
+  place_tokens: 2
+  where_tokens: 2
+  init_std: 0.02
+  anchor_dim: 512
+  anchor_scale_init: 1.0
+  learnable_anchor_scale: true
+  use_object_residual: true
+  normalize_anchor_before_projection: true
+
+model:
+  mode: conditioned   # conditioned | global
+  freeze_bclip: true
+  temperature_from_bclip: true
+
+data:
+  root: .
+  train_csv: data/train.example.csv
+  val_csv: data/train.example.csv
+  classes_json: data/classes.example.json
+  anchors_npy: data/anchors.example.npy
+  image_size: 224
+  num_workers: 2
+
+train:
+  epochs: 20
+  batch_size: 16
+  lr_prompt: 0.0005
+  lr_conditioner: 0.00005
+  weight_decay: 0.0001
+  train_conditioner: false
+  anchor_loss_weight: 0.05
+  amp: true
+  output_dir: outputs

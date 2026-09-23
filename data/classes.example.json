@@ -1,0 +1,29 @@
+[
+  {
+    "id": 0,
+    "name": "person cutting vegetables in kitchen",
+    "object": "vegetables and knife",
+    "action": "cutting",
+    "place": "kitchen",
+    "where": "on a cutting board",
+    "anchor_index": 0
+  },
+  {
+    "id": 1,
+    "name": "person riding bicycle on street",
+    "object": "bicycle",
+    "action": "riding",
+    "place": "street",
+    "where": "on the road",
+    "anchor_index": 1
+  },
+  {
+    "id": 2,
+    "name": "person reading book in library",
+    "object": "book",
+    "action": "reading",
+    "place": "library",
+    "where": "at a table",
+    "anchor_index": 2
+  }
+]
