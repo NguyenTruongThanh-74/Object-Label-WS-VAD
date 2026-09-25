@@ -42,7 +42,7 @@ class BClipAdapter(torch.nn.Module):
             use_text_concepts=False,
             use_text_tokens=False,
             use_text_conditioned_cls=cfg.get("use_text_conditioned_cls", False),
-            context_length=cfg.get("context_length", 77),
+            context_length=cfg.get("context_length", 248),
         )
 
         ckpt = cfg.get("checkpoint", "")
