@@ -31,6 +31,7 @@ class BClipAdapter(torch.nn.Module):
         self.tokenizer = tokenizer_mod.SimpleTokenizer()
 
         model_name = cfg.get("model_name", "CLIP_VITB16_OPENAI")
+        context_length = int(cfg.get("context_length", 248))
         factory = getattr(models, model_name)
         self.model = factory(
             attn_fn=cfg.get("attn_fn", "softmax"),
@@ -42,13 +43,32 @@ class BClipAdapter(torch.nn.Module):
             use_text_concepts=False,
             use_text_tokens=False,
             use_text_conditioned_cls=cfg.get("use_text_conditioned_cls", False),
-            context_length=cfg.get("context_length", 248),
+            context_length=context_length,
         )
+        self._prepare_text_position_embeddings(context_length)
 
         ckpt = cfg.get("checkpoint", "")
         if ckpt:
             self._load_checkpoint(ckpt)
         self.model.to(device)
+
+    def _prepare_text_position_embeddings(self, context_length: int):
+        positional_embedding = getattr(self.model, "positional_embedding", None)
+        if positional_embedding is None or positional_embedding.shape[0] == context_length:
+            return
+
+        resize = getattr(self.model, "resize_text_pos_embed", None)
+        if resize is not None:
+            resize()
+            positional_embedding = self.model.positional_embedding
+
+        actual_length = int(positional_embedding.shape[0])
+        if actual_length != context_length:
+            raise RuntimeError(
+                "β-CLIP text positional embeddings have length "
+                f"{actual_length}, expected {context_length}. "
+                "Use a checkpoint/configuration with matching context_length."
+            )
 
     def _load_checkpoint(self, path: str):
         p = Path(path).expanduser()
