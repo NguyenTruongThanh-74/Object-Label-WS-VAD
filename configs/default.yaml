@@ -5,7 +5,7 @@ bclip:
   repo: external/B-CLIP
   checkpoint: /path/to/bclip_checkpoint.pth
   model_name: CLIP_VITB16_OPENAI
-  context_length: 77
+  context_length: 248
   global_pool: ""   # keep patch tokens for β-CLIP conditioned pooling
   attn_fn: softmax
   attn_fn_alpha: 1.0
