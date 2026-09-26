@@ -12,6 +12,31 @@ bclip:
   text_conditioning_mode: attn_pooling_mlp
   use_text_conditioned_cls: false
 
+sam2:
+  model_cfg: /path/to/sam2_hiera_large.yaml
+  checkpoint: /path/to/sam2.1_hiera_large.pt
+  cache_dir: data/sam2_cache
+  segmentation_dir: data/sam2_masks
+  max_objects: 8
+  points_per_side: 24
+  pred_iou_thresh: 0.7
+  stability_score_thresh: 0.88
+  min_mask_region_area: 128
+  min_mask_area_ratio: 0.001
+  max_mask_area_ratio: 0.8
+  object_text_templates:
+    - "a CCTV video frame containing {object}"
+    - "a surveillance camera view of {object}"
+    - "a video frame showing {object} during an incident"
+  object_vocabulary:
+    - {name: pedestrian, class_id: 0}
+    - {name: everyday object, class_id: 0}
+    - {name: thief, class_id: 1}
+    - {name: robber, class_id: 1}
+    - {name: stolen bag, class_id: 1}
+    - {name: fire, class_id: 2}
+    - {name: smoke, class_id: 2}
+
 prompt:
   object_tokens: 1
   action_tokens: 2
@@ -28,6 +53,9 @@ model:
   mode: conditioned   # conditioned | global
   freeze_bclip: true
   temperature_from_bclip: true
+  video_branch_weight: 1.0
+  anomaly_class_ids: [1, 2]
+  anomaly_topk: 1
 
 data:
   root: .
@@ -36,15 +64,24 @@ data:
   classes_json: data/classes.example.json
   anchors_npy: data/anchors.example.npy
   image_size: 224
+  frames_per_video: 8
+  inference_frame_chunk_size: 32
+  object_dim: 512
+  require_sam2_cache: true
   num_workers: 2
 
 train:
   epochs: 20
   batch_size: 16
   lr_prompt: 0.0005
+  lr_video_branch: 0.0005
   lr_conditioner: 0.00005
   weight_decay: 0.0001
   train_conditioner: false
   anchor_loss_weight: 0.05
+  object_loss_weight: 0.1
+  video_branch_loss_weight: 1.0
+  anomaly_loss_weight: 1.0
+  anomaly_sparsity_weight: 0.05
   amp: true
   output_dir: outputs

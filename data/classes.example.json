@@ -1,29 +1,29 @@
 [
   {
     "id": 0,
-    "name": "person cutting vegetables in kitchen",
-    "object": "vegetables and knife",
-    "action": "cutting",
-    "place": "kitchen",
-    "where": "on a cutting board",
+    "name": "normal surveillance activity",
+    "object": "pedestrian and everyday objects",
+    "action": "routine activity",
+    "place": "public area",
+    "where": "in view of a surveillance camera",
     "anchor_index": 0
   },
   {
     "id": 1,
-    "name": "person riding bicycle on street",
-    "object": "bicycle",
-    "action": "riding",
-    "place": "street",
-    "where": "on the road",
+    "name": "theft or robbery",
+    "object": "thief, robber, and another person's belongings",
+    "action": "stealing or robbing",
+    "place": "street or public area",
+    "where": "near a victim",
     "anchor_index": 1
   },
   {
     "id": 2,
-    "name": "person reading book in library",
-    "object": "book",
-    "action": "reading",
-    "place": "library",
-    "where": "at a table",
+    "name": "fire incident",
+    "object": "fire and smoke",
+    "action": "burning and spreading",
+    "place": "building or outdoor area",
+    "where": "in a surveillance camera view",
     "anchor_index": 2
   }
 ]

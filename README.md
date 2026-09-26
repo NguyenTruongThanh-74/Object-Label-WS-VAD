@@ -1,72 +1,21 @@
-# Structured Learnable Prompting for β-CLIP
+# Video Anomaly Detection with SAM 2 and β-CLIP
 
-Research code for learning a compositional prompt with the fixed semantic order:
+This project keeps the structured **objects + actions + place + where** prompt learner and β-CLIP classifier, and changes each training sample from one image to a clip sampled from a video-frame folder. SAM 2 segments each frame; β-CLIP assigns object names and produces visual/text embeddings for the proposals.
 
-**objects + actions + place + and where**
+Important: SAM 2 is a promptable segmentation model, not a language model. SAM 2 produces masks, not object names or text embeddings. Here its automatic masks are matched against an explicit object-name vocabulary with β-CLIP's image/text encoders. The object names and similarity scores are therefore β-CLIP predictions, not native SAM 2 labels.
 
-The image branch uses β-CLIP. The text branch injects continuous learnable prompt vectors directly into β-CLIP's CLIP-compatible text transformer.
+## Workflow
 
-## Idea
+1. Store each video as a directory of image frames. Use zero-padded filenames such as `000001.jpg` so lexical ordering is temporal ordering.
+2. List video directories and video-level class IDs in the CSV manifest.
+3. Run the SAM 2 extraction command. It saves per-frame binary masks, object-name metadata, and B-CLIP proposal caches.
+4. Train the unchanged structured-prompt classifier on sampled video frames, with cached SAM 2 object proposals as additional conditioning input and object-loss supervision.
 
-For class `c`, the prompt is assembled as:
+SAM 2 segmentation is done frame by frame with its automatic mask generator. The current pipeline does not claim temporal object tracking across frames.
 
-```text
-objects: [O_c] <object words>
-actions: [A] <action words>
-place:   [P] <place words>
-and where: [W] <where words>
-```
+## Install
 
-where:
-
-- `[O_c] = LN(W_anchor a_c + r_object)` is the object prompt token.
-- `a_c` is one externally supplied object anchor vector for class `c`.
-- `W_anchor` is a trainable projection into β-CLIP's text-transformer width.
-- `r_object` is a learnable residual prompt.
-- `[A]`, `[P]`, and `[W]` are shared learnable prompt tokens for action, place, and where.
-- The literal descriptor words are embedded by the frozen β-CLIP token embedding, preserving language semantics.
-
-The model can use either:
-
-1. **Global mode**: standard cosine similarity between β-CLIP image features and structured prompt features.
-2. **Text-conditioned mode**: β-CLIP patch features are dynamically pooled using each structured prompt as the query before classification.
-
-## Repository layout
-
-```text
-bclip_structured_prompt/
-├── configs/default.yaml
-├── data/
-│   ├── classes.example.json
-│   └── train.example.csv
-├── scripts/
-│   ├── setup_bclip.sh
-│   └── make_dummy_anchors.py
-├── src/bclip_prompt/
-│   ├── bclip_adapter.py
-│   ├── dataset.py
-│   ├── losses.py
-│   ├── model.py
-│   ├── prompt_learner.py
-│   ├── train.py
-│   ├── evaluate.py
-│   └── utils.py
-└── tests/test_prompt.py
-```
-
-## 1. Install β-CLIP
-
-The official β-CLIP code is external and is not vendored into this archive.
-
-```bash
-bash scripts/setup_bclip.sh
-```
-
-Then follow the upstream β-CLIP installation instructions and download either the official β-CLIP checkpoint or the OpenAI CLIP ViT-B/16 checkpoint expected by β-CLIP.
-
-Official project: https://github.com/fzohra/B-CLIP
-
-## 2. Install this project
+Install this project and β-CLIP as before:
 
 ```bash
 python -m venv .venv
@@ -74,114 +23,145 @@ source .venv/bin/activate
 pip install -U pip
 pip install -r requirements.txt
 pip install -e .
+bash scripts/setup_bclip.sh
 ```
 
-## 3. Prepare dataset
+Install the official Meta SAM 2 package and its dependencies using its upstream instructions: https://github.com/facebookresearch/sam2. Download a SAM 2 checkpoint and note the matching model YAML. Set `bclip.repo`, `bclip.checkpoint`, `sam2.model_cfg`, and `sam2.checkpoint` in `configs/default.yaml`.
 
-`train.csv` / `val.csv` format:
+## Dataset Format
+
+`train.csv` and `val.csv` have one row per video. Paths are relative to `data.root` unless absolute:
 
 ```csv
-image,label
-images/000001.jpg,0
-images/000002.jpg,1
+video,label
+videos/train/normal_0001,0
+videos/train/theft_0001,1
+videos/train/fire_0001,2
 ```
 
-`classes.json` format:
+Each listed path must be a directory containing image frames. The example categories are normal activity, theft/robbery, and fire. Replace `classes.json` and the object vocabulary to match the dataset being used. Class IDs must be contiguous integers starting at zero.
 
-```json
-[
-  {
-    "id": 0,
-    "name": "person cutting vegetables in kitchen",
-    "object": "vegetables knife",
-    "action": "cutting",
-    "place": "kitchen",
-    "where": "on a cutting board",
-    "anchor_index": 0
-  }
-]
-```
+ShanghaiTech is commonly evaluated as normal/anomaly rather than theft/fire categories. For a binary ShanghaiTech setup, use exactly two video classes (`normal`, `anomaly`), set every anomaly object such as `thief`, `robber`, `fire`, and `smoke` to `class_id: 1` in `sam2.object_vocabulary`, and map normal-scene object names to `class_id: 0`. Do not use the three-class example labels unchanged for a binary dataset.
 
-`anchors.npy` must be `[num_classes, anchor_dim]`, one input anchor vector per class/object prompt.
-
-You can create random anchors only for a smoke test:
+The existing `anchors.npy` remains the class-level initializer for the structured prompt learner, shaped `[num_classes, anchor_dim]`. SAM 2-derived per-video object visual anchors are stored in the proposal cache and passed dynamically through the B-CLIP model. Random anchors are suitable only for a smoke test:
 
 ```bash
 python scripts/make_dummy_anchors.py --classes data/classes.example.json --dim 512 --output data/anchors.example.npy
 ```
 
-For real research, replace them with meaningful object vectors (for example, object embeddings from a detector, an object encoder, or another frozen semantic encoder).
+## Object Prompts and SAM 2 Extraction
 
-## 4. Configure β-CLIP
+`sam2.object_vocabulary` is distinct from the video classification classes. Each entry has an object `name` and the video `class_id` used as its object-loss target. For example, `thief` and `robber` can remain separate detected text outputs while both map to the theft/robbery class. The default prompt ensemble is:
 
-Edit `configs/default.yaml`:
-
-```yaml
-bclip:
-  repo: external/B-CLIP
-  checkpoint: /path/to/bclip_checkpoint.pth
-  model_name: CLIP_VITB16_OPENAI
+```text
+a CCTV video frame containing {object}
+a surveillance camera view of {object}
+a video frame showing {object} during an incident
 ```
 
-The loader uses the official `models_tome.py` factory and supports official β-CLIP checkpoints as well as OpenAI `.pt` checkpoints handled through β-CLIP's conversion functions.
+Keep vocabulary entries short and concrete (`thief`, `robber`, `fire`, `smoke`, `stolen bag`). Add domain-appropriate terms for each dataset; do not put full action sentences in the object vocabulary. The structured class fields (`object`, `action`, `place`, `where`) remain natural-language descriptors for the existing prompt learner.
 
-## 5. Train
+Set the matching SAM 2 config/checkpoint paths and run:
+
+```bash
+python -m bclip_prompt.extract_sam2 --config configs/default.yaml
+```
+
+The command processes videos from both CSV files and writes `data/sam2_cache/<video-key>.npz`, binary mask PNGs under `data/sam2_masks/<video-key>/`, and an `objects.json` per video containing detected object names, mapped class IDs, mask filenames, and β-CLIP similarity. A proposal cache stores the visual region embedding, matched object text embedding, mapped class ID, and validity mask for each frame/proposal.
+
+If changing to this branch from an older cache, rerun extraction. The new cache also stores five normalized mask geometry values per proposal: center x/y, box width/height, and mask area ratio.
+
+## Train and Evaluate
 
 ```bash
 python -m bclip_prompt.train --config configs/default.yaml
+python -m bclip_prompt.evaluate --config configs/default.yaml --checkpoint outputs/best.pt --predictions outputs/video_predictions.csv --frame-scores outputs/frame_anomaly_scores.csv --all-frames
 ```
 
-By default β-CLIP is frozen and only the prompt learner / anchor projection are optimized. Set `train.train_conditioner: true` to also fine-tune β-CLIP's text-conditioned pooling block.
+`data.frames_per_video` controls temporal sampling. Training and evaluation require the corresponding SAM 2 caches by default; set `data.require_sam2_cache: false` only for a video-classification baseline without object proposals. β-CLIP remains frozen by default, and the original `train_conditioner` option still controls its text-conditioned pooling block. Set `model.anomaly_class_ids` to the class IDs treated as anomalous; for binary normal/anomaly datasets this is usually `[1]`.
 
-## 6. Evaluate
+## Model and Losses
 
-```bash
-python -m bclip_prompt.evaluate \
-  --config configs/default.yaml \
-  --checkpoint outputs/best.pt
-```
+The model has two video-level branches:
 
-## Main losses
+1. **Structured-prompt β-CLIP branch:** each frame is scored against the existing structured class text features. In conditioned mode, the matched SAM 2 object text embeddings and masked-region visual anchors are additional patch-pooling queries. The per-frame class logits are averaged over the sampled frames.
+2. **Weakly supervised attention branch:** takes β-CLIP frame embeddings, masked-region visual embeddings, matched object text embeddings, and mask geometry. An object MLP fuses a frame feature and each valid object's visual/text/geometry features. Learned object attention weights pool proposals into a frame representation; learned temporal attention weights pool frame representations into one video representation. A classifier maps this to video-class logits. Invalid padded objects receive zero attention.
 
-Classification:
+For frame `t` and object `k`, let `u[t,k]` be its fused feature and `g[t,k]` indicate whether the proposal is valid. The branch computes:
 
 ```text
-L_cls = CE(logits(image, structured_prompt_c), y)
+object_attention[t,:] = masked_softmax(score_object(u[t,:]), g[t,:])
+object_context[t] = sum_k object_attention[t,k] * u[t,k]
+frame_feature[t] = MLP(frame_embedding[t], object_context[t])
+frame_attention[:] = softmax(score_frame(frame_feature[:]))
+video_feature = sum_t frame_attention[t] * frame_feature[t]
+video_branch_logits = classifier(video_feature)
 ```
 
-Optional object-anchor regularizer:
+This is hierarchical multiple-instance attention: the video label supervises which frames and objects are useful, without requiring frame-level anomaly labels. It pools across sampled frames but does not explicitly model frame order or track object identities over time. The model exposes `frame_attention` and `object_attention` for inspection. These are attention weights and must not be mistaken for anomaly probabilities.
+
+### Per-Frame Anomaly Scores
+
+The attention branch has a separate anomaly head. For each frame representation `h[t]`, it compares that frame with the mean representation of its video. The anomaly head receives the frame feature and its absolute temporal deviation:
 
 ```text
-L_anchor = 1 - cos(object_prompt_without_residual, object_prompt_with_residual)
+deviation[t] = abs(h[t] - mean_t(h[t]))
+frame_anomaly_logit[t] = AnomalyMLP([h[t], deviation[t]])
+frame_anomaly_score[t] = sigmoid(frame_anomaly_logit[t])
+video_anomaly_logit = mean(top_k(frame_anomaly_logit))
+video_anomaly_score = sigmoid(video_anomaly_logit)
 ```
 
-Final:
+`model.anomaly_topk` controls top-k pooling; its default of `1` uses the strongest frame as the video-level anomaly evidence. Set it larger when a clip is expected to contain several anomalous frames. The score is a learned weakly supervised ranking/probability-like value, not a ground-truth frame label or guaranteed calibrated probability. Without `--all-frames`, only sampled evaluation frames receive scores. With `--all-frames`, every frame receives a score; `data.inference_frame_chunk_size` controls how many frames pass through β-CLIP at once, while attention and top-k pooling still see the full video.
+
+Video labels become binary anomaly targets through `model.anomaly_class_ids`. The anomaly loss applies binary cross-entropy to the pooled video logit. Since only positive videos are known to contain an anomaly somewhere, a small sparsity penalty on positive clips encourages the frame head to concentrate evidence rather than marking every frame:
 
 ```text
-L = L_cls + λ_anchor L_anchor
+L_anomaly = BCEWithLogits(video_anomaly_logit, video_is_anomalous)
+					+ λ_sparse * mean(frame_anomaly_score)  # positive videos only
 ```
 
-## Why the implementation is research-friendly
+The complete objective is:
 
-- Semantic prompt structure is explicit and inspectable.
-- Object semantics are anchored by an externally supplied vector rather than learned entirely from scratch.
-- Prompt tokens remain differentiable end-to-end.
-- Frozen descriptor words preserve natural-language priors.
-- β-CLIP can provide query-conditioned image representations instead of a single global image vector.
-- The image encoder can remain frozen, making ablations around prompt learning inexpensive.
-- The object anchor residual can be disabled to test `anchor only` vs `anchor + learnable residual`.
+```text
+L = CE(fused_logits, video_class)
+	+ λ_branch CE(video_branch_logits, video_class)
+	+ λ_anomaly L_anomaly
+	+ λ_anchor L_anchor
+	+ λ_object L_object
+```
 
-## Suggested ablations
+Configure `train.anomaly_loss_weight` and `train.anomaly_sparsity_weight`. There is no frame-level anomaly supervision in this objective.
 
-1. Hard text prompt vs learnable structured prompt.
-2. No object anchor vs fixed object anchor vs projected object anchor.
-3. Object anchor only vs object anchor + learnable residual.
-4. Shared learnable action/place/where tokens vs no learnable context.
-5. Global β-CLIP image feature vs text-conditioned patch pooling.
-6. Freeze β-CLIP vs fine-tune only the conditioning block.
-7. Remove each semantic slot separately.
+The final class prediction combines normalized evidence from both branches:
+
+```text
+fused_logits = log_softmax(bclip_video_logits)
+						 + video_branch_weight * log_softmax(video_branch_logits)
+```
+
+This avoids adding raw logits with very different scales. `model.video_branch_weight` controls the attention branch's contribution to fused predictions.
+
+The object loss uses the SAM 2/β-CLIP-assigned `class_id` to align each visual region embedding with the corresponding structured β-CLIP class text feature:
+
+```text
+L_object = CE(scale * normalize(region_feature) @ normalize(class_text_features).T, object_class_id)
+L = CE(fused_logits, video_label)
+	+ λ_branch CE(video_branch_logits, video_label)
+	+ λ_anchor L_anchor
+	+ λ_object L_object
+```
+
+Both classification terms use only the video label from the CSV; no frame-level labels are required. `L_object` uses the cached vocabulary-to-class mapping, which is a β-CLIP pseudo-label rather than an independent SAM 2 label. `L_anchor` is the original object-prompt residual consistency regularizer. Configure the terms with `train.video_branch_loss_weight`, `train.object_loss_weight`, and `train.anchor_loss_weight`.
+
+### Training and Evaluation Steps
+
+For each training batch, the loader samples `T` frames per video and retrieves the matching cached object proposals. Training samples temporal positions randomly, but frame resize/center-crop is deterministic so cached regions and mask geometry remain aligned with the frame features. The model computes per-frame β-CLIP scores, class-attention branch scores, frame anomaly logits, top-k video anomaly logits, and fused class scores. It calculates the five loss terms above using the video label and valid proposal targets, backpropagates the weighted sum, and updates the prompt learner and attention branch. β-CLIP remains frozen unless its conditioner is explicitly enabled for training. Checkpoint selection uses fused validation accuracy.
+
+Evaluation runs without gradients and reports fused class accuracy, attention-branch class accuracy, binary anomaly accuracy, and weighted validation loss. It writes one row per video to `outputs/video_predictions.csv` and one row per evaluated frame to `outputs/frame_anomaly_scores.csv` by default. The frame file includes the original frame index/name, video anomaly score, frame anomaly score, and a thresholded flag. Use `--all-frames` for dense scores; otherwise it scores the configured temporal sample. `--anomaly-threshold` controls the display flag; it does not change model training or provide a frame-level accuracy metric without frame labels.
 
 ## Notes
 
-- The code assumes the β-CLIP model exposes the standard CLIP text modules (`token_embedding`, `positional_embedding`, `transformer`, `ln_final`, `text_projection`) and, for conditioned mode, `encode_image_by_block` plus `text_conditioned_patches_block`. These interfaces are present in the released β-CLIP implementation.
-- The project deliberately does not copy β-CLIP source or checkpoints into the ZIP. Keep the upstream repository as an external dependency.
+- The SAM 2 and β-CLIP checkpoints/repositories are external dependencies and are not included here.
+- The object vocabulary-to-class mapping is part of the experiment definition; verify it matches the numeric labels in both CSV files.
+- The code expects the released β-CLIP CLIP-compatible text modules and, in conditioned mode, `encode_image_by_block` and `text_conditioned_patches_block`.
