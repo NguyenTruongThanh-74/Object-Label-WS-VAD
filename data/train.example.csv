@@ -1,11 +1,4 @@
-<<<<<<< Updated upstream
-video,label
-videos/normal_0001,0
-videos/theft_0001,1
-videos/fire_0001,2
-=======
 image,label
 /home/researcher/Desktop/THANHNT/Object-Label-WS-VAD/data/training_data/image0.jpg,0
 /home/researcher/Desktop/THANHNT/Object-Label-WS-VAD/data/training_data/image1.jpg,1
 /home/researcher/Desktop/THANHNT/Object-Label-WS-VAD/data/training_data/image2.jpg,2
->>>>>>> Stashed changes

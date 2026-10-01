@@ -13,7 +13,7 @@ bclip:
   use_text_conditioned_cls: false
 
 sam2:
-  model_cfg: configs/sam2.1/sam2.1_hiera_l.yaml
+  model_cfg: configs/sam2/sam2.1/sam2.1_hiera_l.yaml
   checkpoint: /home/researcher/Desktop/THANHNT/Object-Label-WS-VAD/external/external/sam2/checkpoints/sam2.1_hiera_large.pt
   cache_dir: data/sam2_cache
   segmentation_dir: data/sam2_masks
