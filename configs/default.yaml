@@ -13,8 +13,8 @@ bclip:
   use_text_conditioned_cls: false
 
 sam2:
-  model_cfg: /path/to/sam2_hiera_large.yaml
-  checkpoint: /path/to/sam2.1_hiera_large.pt
+  model_cfg: /home/researcher/Desktop/THANHNT/Object-Label-WS-VAD/external/external/sam2/sam2/sam2_hiera_l.yaml
+  checkpoint: /home/researcher/Desktop/THANHNT/Object-Label-WS-VAD/external/external/sam2/checkpoints/sam2.1_hiera_large.pt
   cache_dir: data/sam2_cache
   segmentation_dir: data/sam2_masks
   max_objects: 8
