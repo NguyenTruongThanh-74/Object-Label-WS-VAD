@@ -3,7 +3,7 @@ device: cuda
 
 bclip:
   repo: external/B-CLIP
-  checkpoint: /path/to/bclip_checkpoint.pth
+  checkpoint: /home/researcher/Desktop/THANHNT/Object-Label-WS-VAD/external/B-CLIP/model/bclip_checkpoint.pth
   model_name: CLIP_VITB16_OPENAI
   context_length: 248
   global_pool: ""   # keep patch tokens for β-CLIP conditioned pooling
@@ -59,10 +59,10 @@ model:
 
 data:
   root: .
-  train_csv: data/train.example.csv
-  val_csv: data/train.example.csv
-  classes_json: data/classes.example.json
-  anchors_npy: data/anchors.example.npy
+  train_csv: /home/researcher/Desktop/THANHNT/Object-Label-WS-VAD/data/train.example.csv
+  val_csv: /home/researcher/Desktop/THANHNT/Object-Label-WS-VAD/data/train.example.csv
+  classes_json: /home/researcher/Desktop/THANHNT/Object-Label-WS-VAD/data/classes.example.json
+  anchors_npy: /home/researcher/Desktop/THANHNT/Object-Label-WS-VAD/data/anchors.example.npy
   image_size: 224
   frames_per_video: 8
   inference_frame_chunk_size: 32

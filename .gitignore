@@ -7,3 +7,9 @@ outputs/
 *.pt
 *.pth
 *.npy
+
+# Pretrained models / downloaded model files
+pretrained/
+
+# Training datasets
+data/training_data/

@@ -1,0 +1,4 @@
+export PYTHONPATH="$PWD/src:$PYTHONPATH"
+
+python3 -m bclip_prompt.train \
+    --config configs/default.yaml
