@@ -3,7 +3,7 @@ device: cuda
 
 bclip:
   repo: external/B-CLIP
-  checkpoint: /home/researcher/Desktop/THANHNT/Object-Label-WS-VAD/external/B-CLIP/model/bclip_checkpoint.pth
+  checkpoint: external/B-CLIP/model/bclip_checkpoint.pth
   model_name: CLIP_VITB16_OPENAI
   context_length: 248
   global_pool: ""   # keep patch tokens for β-CLIP conditioned pooling
@@ -14,7 +14,7 @@ bclip:
 
 sam2:
   model_cfg: configs/sam2.1/sam2.1_hiera_l.yaml
-  checkpoint: /home/researcher/Desktop/THANHNT/Object-Label-WS-VAD/external/external/sam2/checkpoints/sam2.1_hiera_large.pt
+  checkpoint: external/sam2/checkpoints/sam2.1_hiera_large.pt
   cache_dir: data/sam2_cache
   segmentation_dir: data/sam2_masks
   max_objects: 8
@@ -29,13 +29,19 @@ sam2:
     - "a surveillance camera view of {object}"
     - "a video frame showing {object} during an incident"
   object_vocabulary:
-    - {name: pedestrian, class_id: 0}
-    - {name: everyday object, class_id: 0}
-    - {name: thief, class_id: 1}
-    - {name: robber, class_id: 1}
-    - {name: stolen bag, class_id: 1}
-    - {name: fire, class_id: 2}
-    - {name: smoke, class_id: 2}
+    - {name: pedestrian, class_id: null}
+    - {name: person, class_id: null}
+    - {name: bicycle, class_id: null}
+    - {name: vehicle, class_id: null}
+    - {name: crowd, class_id: null}
+    - {name: bag, class_id: null}
+    - {name: gun, class_id: null}
+    - {name: knife, class_id: null}
+    - {name: fire, class_id: null}
+    - {name: smoke, class_id: null}
+    - {name: explosion, class_id: null}
+    - {name: fight, class_id: null}
+    - {name: collision, class_id: null}
 
 prompt:
   object_tokens: 1
@@ -54,15 +60,15 @@ model:
   freeze_bclip: true
   temperature_from_bclip: true
   video_branch_weight: 1.0
-  anomaly_class_ids: [1, 2]
+  anomaly_class_ids: [1]
   anomaly_topk: 1
 
 data:
   root: .
-  train_csv: /home/researcher/Desktop/THANHNT/Object-Label-WS-VAD/data/train.example.csv
-  val_csv: /home/researcher/Desktop/THANHNT/Object-Label-WS-VAD/data/train.example.csv
-  classes_json: /home/researcher/Desktop/THANHNT/Object-Label-WS-VAD/data/classes.example.json
-  anchors_npy: /home/researcher/Desktop/THANHNT/Object-Label-WS-VAD/data/anchors.example.npy
+  train_csv: data/train.csv
+  val_csv: data/val.csv
+  classes_json: data/classes.binary.example.json
+  anchors_npy: data/anchors.binary.example.npy
   image_size: 224
   frames_per_video: 8
   inference_frame_chunk_size: 32
@@ -83,5 +89,8 @@ train:
   video_branch_loss_weight: 1.0
   anomaly_loss_weight: 1.0
   anomaly_sparsity_weight: 0.05
+  normal_frame_loss_weight: 0.1
+  normal_object_loss_weight: 0.1
+  hierarchy_loss_weight: 0.1
   amp: true
   output_dir: outputs

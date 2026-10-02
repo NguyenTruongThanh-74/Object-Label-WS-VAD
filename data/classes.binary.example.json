@@ -1,0 +1,20 @@
+[
+  {
+    "id": 0,
+    "name": "normal surveillance activity",
+    "object": "people and objects in routine activity",
+    "action": "walking or carrying out everyday activities",
+    "place": "public surveillance scene",
+    "where": "in a monitored camera view",
+    "anchor_index": 0
+  },
+  {
+    "id": 1,
+    "name": "anomalous surveillance activity",
+    "object": "entities involved in an unusual event",
+    "action": "an action that deviates from normal scene activity",
+    "place": "public surveillance scene",
+    "where": "in a monitored camera view",
+    "anchor_index": 1
+  }
+]

@@ -46,3 +46,46 @@ def weak_anomaly_mil_loss(
         sparsity_loss = torch.sigmoid(frame_anomaly_logits[positive]).mean(dim=1).mean()
         video_loss = video_loss + sparsity_weight * sparsity_loss
     return video_loss
+
+
+def hierarchical_anomaly_loss(
+    video_anomaly_logits: torch.Tensor,
+    frame_anomaly_logits: torch.Tensor,
+    object_anomaly_scores: torch.Tensor,
+    object_valid: torch.Tensor,
+    frame_object_anomaly_scores: torch.Tensor,
+    object_frame_gate: torch.Tensor,
+    video_anomaly_targets: torch.Tensor,
+    sparsity_weight: float = 0.05,
+    normal_frame_weight: float = 0.1,
+    normal_object_weight: float = 0.1,
+    hierarchy_weight: float = 0.1,
+) -> torch.Tensor:
+    """Propagate video labels to frames and proposals without positive instance labels."""
+    loss = weak_anomaly_mil_loss(
+        video_anomaly_logits,
+        frame_anomaly_logits,
+        video_anomaly_targets,
+        sparsity_weight=sparsity_weight,
+    )
+    normal_videos = video_anomaly_targets <= 0.5
+    if normal_videos.any():
+        frame_scores = torch.sigmoid(frame_anomaly_logits)
+        loss = loss + normal_frame_weight * frame_scores[normal_videos].mean()
+
+        valid = object_valid[normal_videos]
+        scores = object_anomaly_scores[normal_videos] * valid.to(object_anomaly_scores.dtype)
+        counts = valid.sum(dim=(1, 2)).clamp_min(1).to(scores.dtype)
+        per_video_object_scores = scores.sum(dim=(1, 2)) / counts
+        loss = loss + normal_object_weight * per_video_object_scores.mean()
+
+    frames_with_objects = object_valid.any(dim=-1)
+    if frames_with_objects.any():
+        consistency = torch.abs(
+            torch.sigmoid(frame_anomaly_logits) - frame_object_anomaly_scores
+        )
+        weighted_consistency = consistency * object_frame_gate * frames_with_objects.to(consistency.dtype)
+        loss = loss + hierarchy_weight * (
+            weighted_consistency.sum() / frames_with_objects.sum().clamp_min(1)
+        )
+    return loss

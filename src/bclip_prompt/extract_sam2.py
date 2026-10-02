@@ -56,8 +56,9 @@ def make_object_text_bank(adapter: BClipAdapter, classes: list[dict], cfg: dict,
     texts = []
     for item in vocabulary:
         object_name = str(item["name"])
-        class_id = int(item["class_id"])
-        if class_id < 0 or class_id >= len(classes):
+        class_value = item.get("class_id")
+        class_id = -1 if class_value is None else int(class_value)
+        if class_id < -1 or class_id >= len(classes):
             raise ValueError(f"Object '{object_name}' has invalid class_id={class_id}")
         texts.extend(template.format(object=object_name) for template in templates)
     features = encode_texts(adapter, texts, device)

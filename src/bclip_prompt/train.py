@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from .bclip_adapter import BClipAdapter
 from .dataset import VideoCSVClassificationDataset
-from .losses import weak_anomaly_mil_loss
+from .losses import hierarchical_anomaly_loss
 from .model import StructuredBCLIP
 from .prompt_learner import StructuredPromptLearner
 from .utils import load_json, load_yaml, resolve_device, save_checkpoint, seed_everything
@@ -98,6 +98,8 @@ def evaluate(model, loader, device, cfg, return_predictions: bool = False):
     branch_predictions = []
     video_anomaly_scores = []
     frame_anomaly_scores = []
+    object_anomaly_scores = []
+    frame_object_anomaly_scores = []
     frame_indices_all = []
     anchor_w = float(cfg["train"].get("anchor_loss_weight", 0.0))
     object_w = float(cfg["train"].get("object_loss_weight", 0.1))
@@ -122,11 +124,18 @@ def evaluate(model, loader, device, cfg, return_predictions: bool = False):
             F.cross_entropy(out["logits"], labels)
             + float(cfg["train"].get("video_branch_loss_weight", 1.0))
             * F.cross_entropy(out["video_branch_logits"], labels)
-            + anomaly_w * weak_anomaly_mil_loss(
+            + anomaly_w * hierarchical_anomaly_loss(
                 out["video_anomaly_logit"],
                 out["frame_anomaly_logits"],
+                out["object_anomaly_scores"],
+                valid,
+                out["frame_object_anomaly_scores"],
+                out["object_frame_gate"],
                 make_anomaly_targets(labels, cfg),
                 sparsity_weight=sparsity_w,
+                normal_frame_weight=float(cfg["train"].get("normal_frame_loss_weight", 0.1)),
+                normal_object_weight=float(cfg["train"].get("normal_object_loss_weight", 0.1)),
+                hierarchy_weight=float(cfg["train"].get("hierarchy_loss_weight", 0.1)),
             )
             + anchor_w * out["anchor_loss"]
             + object_w * out["object_loss"]
@@ -141,6 +150,8 @@ def evaluate(model, loader, device, cfg, return_predictions: bool = False):
             branch_predictions.extend(out["video_branch_logits"].argmax(dim=1).cpu().tolist())
             video_anomaly_scores.extend(out["video_anomaly_score"].cpu().tolist())
             frame_anomaly_scores.extend(out["frame_anomaly_scores"].cpu().tolist())
+            object_anomaly_scores.extend(out["object_anomaly_scores"].cpu().tolist())
+            frame_object_anomaly_scores.extend(out["frame_object_anomaly_scores"].cpu().tolist())
             frame_indices_all.extend(frame_indices.tolist())
         n += labels.numel()
     metrics = {
@@ -154,6 +165,8 @@ def evaluate(model, loader, device, cfg, return_predictions: bool = False):
         metrics["branch_predictions"] = branch_predictions
         metrics["video_anomaly_scores"] = video_anomaly_scores
         metrics["frame_anomaly_scores"] = frame_anomaly_scores
+        metrics["object_anomaly_scores"] = object_anomaly_scores
+        metrics["frame_object_anomaly_scores"] = frame_object_anomaly_scores
         metrics["frame_indices"] = frame_indices_all
     return metrics
 
@@ -211,11 +224,18 @@ def main():
                 )
                 cls_loss = F.cross_entropy(out["logits"], labels)
                 branch_loss = F.cross_entropy(out["video_branch_logits"], labels)
-                anomaly_loss = weak_anomaly_mil_loss(
+                anomaly_loss = hierarchical_anomaly_loss(
                     out["video_anomaly_logit"],
                     out["frame_anomaly_logits"],
+                    out["object_anomaly_scores"],
+                    valid,
+                    out["frame_object_anomaly_scores"],
+                    out["object_frame_gate"],
                     make_anomaly_targets(labels, cfg),
                     sparsity_weight=float(cfg["train"].get("anomaly_sparsity_weight", 0.05)),
+                    normal_frame_weight=float(cfg["train"].get("normal_frame_loss_weight", 0.1)),
+                    normal_object_weight=float(cfg["train"].get("normal_object_loss_weight", 0.1)),
+                    hierarchy_weight=float(cfg["train"].get("hierarchy_loss_weight", 0.1)),
                 )
                 loss = (
                     cls_loss

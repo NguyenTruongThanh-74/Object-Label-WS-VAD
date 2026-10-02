@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 external/B-CLIP/
+external/sam2/
 outputs/
 *.pt
 *.pth
@@ -13,3 +14,7 @@ pretrained/
 
 # Training datasets
 data/training_data/
+data/raw/
+data/frames/
+data/sam2_cache/
+data/sam2_masks/

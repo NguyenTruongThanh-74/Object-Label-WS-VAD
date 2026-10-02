@@ -1,12 +1,16 @@
+import csv
 import torch
 import torch.nn as nn
 import numpy as np
 from PIL import Image
 
 from bclip_prompt.dataset import VideoCSVClassificationDataset, video_cache_key
-from bclip_prompt.losses import sam2_object_alignment, weak_anomaly_mil_loss
+from bclip_prompt.evaluate import compose_spatial_anomaly_map
+from bclip_prompt.extract_sam2 import make_object_text_bank
+from bclip_prompt.losses import hierarchical_anomaly_loss, sam2_object_alignment, weak_anomaly_mil_loss
 from bclip_prompt.prompt_learner import StructuredPromptLearner
 from bclip_prompt.video_branch import WeaklySupervisedVideoBranch
+from scripts.prepare_video_data import prepare
 
 
 class FakeTokenizer:
@@ -39,6 +43,10 @@ class FakeAdapter(nn.Module):
 
     def embed_token_ids(self, ids):
         return self.embedding(ids)
+
+    def encode_soft_text(self, embeddings, eot_positions):
+        batch_indices = torch.arange(embeddings.shape[0], device=embeddings.device)
+        return embeddings[batch_indices, eot_positions]
 
 
 def test_prompt_shape_and_anchor_gradient():
@@ -77,6 +85,22 @@ def test_sam2_object_alignment_uses_object_labels():
 
     assert loss.item() < 0.1
     assert text.grad is not None
+
+
+def test_object_vocabulary_can_skip_class_pseudo_labels():
+    classes = [{"id": 0, "name": "normal"}, {"id": 1, "name": "anomalous"}]
+    cfg = {
+        "object_text_templates": ["a frame containing {object}"],
+        "object_vocabulary": [{"name": "gun", "class_id": None}],
+    }
+
+    bank, names, class_ids = make_object_text_bank(
+        FakeAdapter(), classes, cfg, torch.device("cpu")
+    )
+
+    assert bank.shape == (1, 16)
+    assert names == ["gun"]
+    assert class_ids == [-1]
 
 
 def test_video_dataset_returns_aligned_frames_and_sam2_cache(tmp_path):
@@ -163,11 +187,80 @@ def test_weak_video_branch_attends_over_objects_and_frames():
     assert output["frame_attention"].shape == (2, 3)
     assert output["object_attention"].shape == (2, 3, 2)
     assert output["frame_anomaly_scores"].shape == (2, 3)
+    assert output["object_anomaly_scores"].shape == (2, 3, 2)
     assert output["video_anomaly_score"].shape == (2,)
     assert torch.allclose(output["frame_attention"].sum(dim=1), torch.ones(2))
     assert torch.allclose(
         output["video_anomaly_logit"], output["frame_anomaly_logits"].max(dim=1).values
     )
     assert torch.all(output["object_attention"][~valid] == 0)
+    assert torch.all(output["object_anomaly_scores"][~valid] == 0)
+    assert torch.allclose(
+        output["frame_object_anomaly_scores"],
+        1.0 - torch.prod(1.0 - output["object_anomaly_scores"], dim=-1),
+    )
     assert branch.object_fusion[0].weight.grad is not None
     assert branch.anomaly_head[0].weight.grad is not None
+
+
+def test_hierarchical_anomaly_loss_backpropagates_to_object_scores():
+    valid = torch.tensor([
+        [[True, True], [False, False], [True, False]],
+        [[True, False], [True, True], [False, False]],
+    ])
+    object_logits = torch.randn(2, 3, 2, requires_grad=True)
+    object_scores = torch.sigmoid(object_logits) * valid
+    frame_object_scores = 1.0 - torch.prod(1.0 - object_scores, dim=-1)
+    frame_logits = torch.randn(2, 3, requires_grad=True)
+    gate = torch.sigmoid(torch.randn(2, 3, requires_grad=True))
+    video_logits = frame_logits.topk(1, dim=1).values.squeeze(1)
+
+    loss = hierarchical_anomaly_loss(
+        video_logits,
+        frame_logits,
+        object_scores,
+        valid,
+        frame_object_scores,
+        gate,
+        torch.tensor([0.0, 1.0]),
+    )
+    loss.backward()
+
+    assert torch.isfinite(loss)
+    assert object_logits.grad is not None
+    assert torch.isfinite(object_logits.grad).all()
+
+
+def test_spatial_map_uses_noisy_or_for_overlapping_masks():
+    first_mask = np.asarray([[1, 1], [0, 0]], dtype=np.uint8)
+    second_mask = np.asarray([[1, 0], [0, 1]], dtype=np.uint8)
+
+    spatial_map = compose_spatial_anomaly_map(
+        [first_mask, second_mask], [0.5, 0.6], (2, 2)
+    )
+
+    assert np.allclose(spatial_map, [[0.8, 0.5], [0.0, 0.6]])
+
+
+def test_prepare_video_data_reuses_existing_frame_directories(tmp_path):
+    source_root = tmp_path / "source"
+    frame_dir = source_root / "train" / "normal_clip"
+    frame_dir.mkdir(parents=True)
+    Image.new("RGB", (8, 8)).save(frame_dir / "000001.jpg")
+    input_csv = tmp_path / "input.csv"
+    input_csv.write_text("video,label\ntrain/normal_clip,0\n", encoding="utf-8")
+    output_csv = tmp_path / "data" / "train.csv"
+
+    prepare(
+        input_csv,
+        source_root,
+        tmp_path / "data" / "frames",
+        output_csv,
+        tmp_path,
+        "ffmpeg",
+        None,
+    )
+
+    with output_csv.open("r", encoding="utf-8", newline="") as output_file:
+        rows = list(csv.DictReader(output_file))
+    assert rows == [{"video": "source/train/normal_clip", "label": "0"}]

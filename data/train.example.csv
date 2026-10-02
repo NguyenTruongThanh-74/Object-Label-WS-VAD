@@ -1,4 +1,3 @@
-image,label
-/home/researcher/Desktop/THANHNT/Object-Label-WS-VAD/data/training_data/image0.jpg,0
-/home/researcher/Desktop/THANHNT/Object-Label-WS-VAD/data/training_data/image1.jpg,1
-/home/researcher/Desktop/THANHNT/Object-Label-WS-VAD/data/training_data/image2.jpg,2
+video,label
+data/frames/train/normal/example_0001,0
+data/frames/train/anomalous/example_0001,1
